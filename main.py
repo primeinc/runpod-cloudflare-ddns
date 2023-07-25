@@ -30,13 +30,16 @@ try:
     log_file_path = config['General']['Log_File_Path']
 
     # Generate a unique subdomain
+    subdomain_prefix = config['Cloudflare'].get('Subdomain_Prefix', '')
+    print(f"Generating a unique subdomain ending with {subdomain_prefix}...")
     while True:
         subdomain = random.choice(adjectives) + random.choice(animals)
-        if not os.path.exists(log_file_path):
-            open(log_file_path, 'w').close()
-        with open(log_file_path, 'r') as log_file:
-            if subdomain not in log_file.read():
-                break
+        full_subdomain = f"{subdomain}.{subdomain_prefix}" if subdomain_prefix else subdomain
+
+        # Check if the subdomain exists in Cloudflare
+        dns_records = cf.zones.dns_records.get(config['Cloudflare']['Zone_ID'])
+        if not any(record['name'] == full_subdomain for record in dns_records):
+            break
 
     # Get public IP
     public_ip = requests.get('https://api.ipify.org').text
@@ -47,7 +50,7 @@ try:
     zone_name = zone['name']
     dns_records = cf.zones.dns_records.post(zone_id, data={
         "type": "A",
-        "name": subdomain,
+        "name": full_subdomain,
         "content": public_ip,
         "ttl": 120,
         "proxied": False
@@ -56,7 +59,7 @@ try:
     # Change the hostname
     try:
         with open('/etc/hostname', 'w') as hostname_file:
-            hostname_file.write(subdomain)
+            hostname_file.write(full_subdomain)
     except PermissionError:
         print("Permission error while trying to change the hostname. Please ensure the script has the necessary permissions to modify /etc/hostname.")
     except Exception as e:
@@ -64,33 +67,24 @@ try:
 
     # Append the subdomain and current date to the log file
     with open(log_file_path, 'a') as log_file:
-        log_file.write(f"{subdomain},{datetime.now()}\n")
+        log_file.write(f"{full_subdomain},{datetime.now()}\n")
 
-    # Check the log file for entries older than the configured hours and delete them
+        # Check the Cloudflare DNS records for entries older than the configured hours and delete them
     delete_after_hours = int(config['General']['Delete_After_Hours'])
     if delete_after_hours > 0:
-        with open(log_file_path, 'r') as log_file:
-            lines = log_file.readlines()
-        with open(log_file_path, 'w') as log_file:
-            for line in lines:
-                subdomain, date = line.strip().split(',')
-                date = datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f")
-                if datetime.now() - date <= timedelta(hours=delete_after_hours):
-                    log_file.write(line)
-                else:
-                    # Delete the subdomain on Cloudflare
-                    dns_records = cf.zones.dns_records.get(zone_id)
-                    for record in dns_records:
-                        if record['name'] == subdomain:
-                            cf.zones.dns_records.delete(zone_id, record['id'])
-                            print(f"Deleted subdomain {subdomain} due to exceeding the age limit of {delete_after_hours} hours.")
-
+        dns_records = cf.zones.dns_records.get(zone_id)
+        for record in dns_records:
+            if record['name'].endswith(subdomain_prefix):
+                created_on = datetime.strptime(record['created_on'], "%Y-%m-%dT%H:%M:%S.%fZ")
+                if datetime.now() - created_on >= timedelta(hours=delete_after_hours):
+                    cf.zones.dns_records.delete(zone_id, record['id'])
+                    print(f"Deleted subdomain {record['name']} due to exceeding the age limit of {delete_after_hours} hours.")
 
     # Print out the URL, IP address, and hostname
     print("\n--- Setup Complete ---")
-    print(f"Hostname: {subdomain}.{zone_name}")
+    print(f"Hostname: {full_subdomain}.{zone_name}")
     print(f"IP Address: {public_ip}")
-    print(f"https://{subdomain}.{zone_name}")
+    print(f"https://{full_subdomain}.{zone_name}")
 
 except CloudFlare.exceptions.CloudFlareAPIError:
     print(f"Authentication error. Please check your Cloudflare configuration in {config_file}.")

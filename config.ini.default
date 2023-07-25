@@ -2,7 +2,8 @@
 Token = YOUR_CLOUDFLARE_API_TOKEN
 Zone_ID = YOUR_ZONE_ID
 Debug = false
+Subdomain_Prefix = ddns  # recommended
 
 [General]
-Log_File_Path = /working/subdomains.log
-Delete_After_Hours = 48
+Log_File_Path = subdomains.log
+Delete_After_Hours = 0  # optional
