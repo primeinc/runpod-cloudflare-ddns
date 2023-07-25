@@ -64,6 +64,14 @@ try:
         print("Permission error while trying to change the hostname. Please ensure the script has the necessary permissions to modify /etc/hostname.")
     except Exception as e:
         print(f"An error occurred while trying to change the hostname: {e}")
+    
+    try:
+        with open('/etc/servername', 'w') as servername_file:
+            servername_file.write(f"{full_subdomain}.{zone_name}")
+    except PermissionError:
+        print("Permission error while trying to change the servername. Please ensure the script has the necessary permissions to modify /etc/hostname.")
+    except Exception as e:
+        print(f"An error occurred while trying to change the servername: {e}")
 
     # Append the subdomain and current date to the log file
     with open(log_file_path, 'a') as log_file:
